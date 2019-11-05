@@ -25,7 +25,7 @@ import scala.util.Try
  **/
 object Kniffle extends App {
 
-  sealed trait Die { val value: Int }
+  sealed trait Die { val value: Int; override def toString() = this.value.toString }
   case object One   extends Die { val value: Int = 1 }
   case object Two   extends Die { val value: Int = 2 }
   case object Three extends Die { val value: Int = 3 }
@@ -43,9 +43,9 @@ object Kniffle extends App {
     }
   }
 
-  def countMatchingDice(f: Die => Boolean): FiveDice => Int = _.value.count(f(_))
+  def sumMatchingDice(f: Die => Boolean): FiveDice => Int = _.value.filter(f(_)).map(_.value).sum
 
-  def countDieMatches(d: Die): FiveDice => Int = countMatchingDice(_ == d)
+  def sumDieMatches(d: Die): FiveDice => Int = sumMatchingDice(_ == d)
 
   val groupedDiceLengths: FiveDice => List[Int] =
     _.value
@@ -70,38 +70,48 @@ object Kniffle extends App {
   }
 
   def sumIfPredicate(cond: FiveDice => Boolean): FiveDice => Int =
-    roll => if (cond(roll)) countMatchingDice(_ => true)(roll) else 0
+    roll => if (cond(roll)) sumMatchingDice(_ => true)(roll) else 0
+
+  def scoreIfPredicate(cond: FiveDice => Boolean, scoreFunc: FiveDice => Int): FiveDice => Int =
+    roll => if (cond(roll)) scoreFunc(roll) else 0
 
   def ofKindScore(n: Int): FiveDice => Int = sumIfPredicate(containsNOfKind(n))
 
-  def fullHouseScore = sumIfPredicate(containsMandNOfKind(3, 2))
+  def fullHouseScore = scoreIfPredicate(containsMandNOfKind(3, 2), _ => 30)
 
-  val allSequential: List[Int] => Boolean = list =>
-    list.zip(list.tail).filter(p => p._2 - p._1 <= 1).nonEmpty
+  def kniffleScore = scoreIfPredicate(containsNOfKind(5), _ => 50)
 
+  def sequentialPair(p: (Int, Int)): Boolean      = p._2 - p._1 == 1
+  def allSequential(l: List[(Int, Int)]): Boolean = l.forall(sequentialPair)
+  def nSequential(n: Int): List[Int] => Boolean =
+    list => list.distinct.sorted.zip(list.tail).sliding(n - 1).exists(allSequential)
   def containsNOfStraight(n: Int): FiveDice => Boolean = { fiveDice =>
-    val list = fiveDice.value
-    list.map(_.value).sliding(n).exists(allSequential)
+    nSequential(n)(fiveDice.value.map(_.value))
   }
 
-  def straightScore(n: Int): FiveDice => Int = (sumIfPredicate _ compose containsNOfStraight)(n)
+  def straightScore(n: Int, s: Int): FiveDice => Int =
+    scoreIfPredicate(containsNOfStraight(n), _ => s)
 
-  abstract class Outcome(val score: FiveDice => Int)
-  case object Ones         extends Outcome(countDieMatches(One))
-  case object Twos         extends Outcome(countDieMatches(Two))
-  case object Threes       extends Outcome(countDieMatches(Three))
-  case object Fours        extends Outcome(countDieMatches(Four))
-  case object Fives        extends Outcome(countDieMatches(Five))
-  case object Sixes        extends Outcome(countDieMatches(Six))
-  case object ThreeOfKind  extends Outcome(ofKindScore(3))
-  case object FourOfKind   extends Outcome(ofKindScore(4))
-  case object FullHouse    extends Outcome(fullHouseScore)
-  case object FiveOfKind   extends Outcome(ofKindScore(5))
-  case object FourStraight extends Outcome(straightScore(4))
-  case object FiveStraight extends Outcome(straightScore(5))
-  case object Chance       extends Outcome(countMatchingDice(_ => true))
+  abstract class Outcome(val score: FiveDice => Int, val order: Int) extends Ordered[Outcome] {
+    def compare(that: Outcome) = this.order.compare(that.order)
+  }
+  case object Ones         extends Outcome(sumDieMatches(One), 0)
+  case object Twos         extends Outcome(sumDieMatches(Two), 1)
+  case object Threes       extends Outcome(sumDieMatches(Three), 2)
+  case object Fours        extends Outcome(sumDieMatches(Four), 3)
+  case object Fives        extends Outcome(sumDieMatches(Five), 4)
+  case object Sixes        extends Outcome(sumDieMatches(Six), 5)
+  case object ThreeOfKind  extends Outcome(ofKindScore(3), 6)
+  case object FourOfKind   extends Outcome(ofKindScore(4), 7)
+  case object FullHouse    extends Outcome(fullHouseScore, 8)
+  case object FiveOfKind   extends Outcome(kniffleScore, 9)
+  case object FourStraight extends Outcome(straightScore(4, 25), 10)
+  case object FiveStraight extends Outcome(straightScore(5, 40), 11)
+  case object Chance       extends Outcome(sumMatchingDice(_ => true), 12)
 
-  case class Assignment(outcome: Outcome, roll: FiveDice)
+  case class Assignment(outcome: Outcome, roll: FiveDice) extends Ordered[Assignment] {
+    def compare(that: Assignment) = this.outcome.compare(that.outcome)
+  }
 
   val emptyHand = List(
     Ones,
@@ -189,12 +199,12 @@ object Kniffle extends App {
 
   private def getAssignment(
       roll: FiveDice,
-      currentPlayer: String,
+      currentPlayer: PlayerState,
       state: PlayerState
   ): ZIO[Console, IOException, PlayerState] =
     for {
       _            <- putStrLn("please assign your roll to a hand")
-      assignString <- putStrLn(state.toString()) *> getStrLn
+      assignString <- putStrLn(s"${currentPlayer.unfilledHands.toString()}") *> getStrLn
       maybeState <- parseAssignString(assignString, roll, state) match {
         case None =>
           putStrLn("miscellanious error assigning roll") *> getAssignment(
@@ -243,7 +253,7 @@ object Kniffle extends App {
   private def getRetained(
       roll: FiveDice,
       turnsTaken: Int,
-      currentPlayer: String
+      currentPlayer: PlayerState
   ): ZIO[Console with Random, IOException, FiveDice] = {
     if (turnsTaken >= 2) ZIO.succeed(roll)
     else {
@@ -268,28 +278,29 @@ object Kniffle extends App {
   }
 
   private def rollLoop(
-      currentPlayer: String,
+      currentPlayer: PlayerState,
       state: State
   ): ZIO[Console with Random, IOException, PlayerState] =
     for {
-      _        <- putStrLn(s"current player is $currentPlayer")
+      _        <- putStrLn(s"current player is ${currentPlayer.name}")
+      _        <- putStrLn(s"     fillled Hands: ${currentPlayer.filledHands.sorted}")
+      _        <- putStrLn(s"     unfillled Hands: ${currentPlayer.unfilledHands.sorted}")
       roll     <- roll5Dice
       retained <- getRetained(roll, 0, currentPlayer) //TODO this is actually the full roll, not just retained
       _        <- putStrLn(s"your roll is $retained")
       state <- getAssignment(
         retained,
         currentPlayer,
-        state.players.find(_.name == currentPlayer).get
+        state.players.find(_.name == currentPlayer.name).get
       )
 
     } yield (state)
 
   private def gameLoop(state: State): ZIO[Console with Random, IOException, State] =
     for {
-      _ <- putStrLn("your turn")
       _ <- renderState(state)
       currentPlayer = state.players.head
-      newPlayerState <- rollLoop(currentPlayer.name, state)
+      newPlayerState <- rollLoop(currentPlayer, state)
       newState = advancePlayer(updateState(newPlayerState, state))
       _ <- putStrLn(s"exited roll loop - newState $newState")
       //TODO update state
@@ -298,7 +309,7 @@ object Kniffle extends App {
     } yield (finalState)
 
   def nextInt(max: Int): ZIO[Random, Nothing, Int] =
-    nextInt(max)
+    random.nextInt(max)
 
   private val rollNDice: Int => ZIO[Random, Nothing, List[Die]] =
     n => ZIO.traverse(List.fill(n)("foo"))(_ => rollDie)
@@ -318,7 +329,27 @@ object Kniffle extends App {
       })
 
   private def renderState(state: State): ZIO[Console, IOException, Unit] = {
-    putStrLn(s"the state is: ${state.players.map(_.toString).mkString("\n   ")}")
+    val dashes = "-" * 10
+    def renderPlayerState(playerState: PlayerState): ZIO[Console, IOException, Unit] =
+      for {
+        _ <- putStrLn(playerState.name)
+        _ <- putStrLn("")
+        _ <- putStrLn("filled hands")
+        _ <- ZIO.traverse(playerState.filledHands)(
+          fh =>
+            for {
+              _ <- putStrLn(s"Hand: ${fh.outcome}   |   Score: ${fh.outcome.score(fh.roll)} ")
+            } yield ()
+        )
+
+      } yield ()
+
+    for {
+      _ <- ZIO.traverse(state.players)(
+        player => putStrLn("") *> putStrLn(dashes) *> renderPlayerState(player)
+      )
+    } yield ()
+
   }
 
   private val getNumberPlayers: ZIO[Console, IOException, Int] =
@@ -347,7 +378,6 @@ object Kniffle extends App {
       _               <- putStrLn(s"numberOfPlayers $numberOfPlayers")
       playerNames     <- getPlayerNames(numberOfPlayers)
       state = State(playerNames.map(name => PlayerState.empty(name)))
-      _          <- renderState(state)
       finalState <- gameLoop(state)
       _          <- renderState(finalState)
     } yield ()
