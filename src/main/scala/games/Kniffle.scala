@@ -81,12 +81,11 @@ object Kniffle extends App {
 
   def kniffleScore = scoreIfPredicate(containsNOfKind(5), _ => 50)
 
-  def sequentialPair(p: (Int, Int)): Boolean      = p._2 - p._1 == 1
-  def allSequential(l: List[(Int, Int)]): Boolean = l.forall(sequentialPair)
-  def nSequential(n: Int): List[Int] => Boolean =
-    list => list.distinct.sorted.zip(list.tail).sliding(n - 1).exists(allSequential)
   def containsNOfStraight(n: Int): FiveDice => Boolean = { fiveDice =>
-    nSequential(n)(fiveDice.value.map(_.value))
+    def allSequential(ints: List[Int]): Boolean =
+      ints.sorted.zip(ints.tail).forall(p => p._2 - p._1 == 1)
+
+    fiveDice.value.map(_.value).sorted.sliding(n).exists(allSequential)
   }
 
   def straightScore(n: Int, s: Int): FiveDice => Int =
@@ -104,7 +103,7 @@ object Kniffle extends App {
   case object ThreeOfKind  extends Outcome(ofKindScore(3), 6)
   case object FourOfKind   extends Outcome(ofKindScore(4), 7)
   case object FullHouse    extends Outcome(fullHouseScore, 8)
-  case object FiveOfKind   extends Outcome(kniffleScore, 9)
+  case object Kniffle      extends Outcome(kniffleScore, 9)
   case object FourStraight extends Outcome(straightScore(4, 25), 10)
   case object FiveStraight extends Outcome(straightScore(5, 40), 11)
   case object Chance       extends Outcome(sumMatchingDice(_ => true), 12)
@@ -123,7 +122,7 @@ object Kniffle extends App {
     ThreeOfKind,
     FourOfKind,
     FullHouse,
-    FiveOfKind,
+    Kniffle,
     FourStraight,
     FiveStraight,
     Chance
@@ -167,7 +166,8 @@ object Kniffle extends App {
 
   //TODO needs to return an Option[FiveDice]
   def parseRetainString(retain: String): Reader[FiveDice, Option[List[Die]]] = Reader { roll =>
-    {
+    if (retain.isEmpty()) Some(Nil)
+    else {
       val rollList: List[Die] = roll.value
 
       val retainedDice: String => Option[List[Die]] =
@@ -184,7 +184,6 @@ object Kniffle extends App {
             .map(key => retVals.get(key) <= rollVals.get(key))
             .forall(_ == true)
             .option(retain)
-//          retVals.keys.forall(x => retVals(x) <= rollVals(x)).option(retain)
         }
 
       val validNumberRetainments: List[Die] => Option[List[Die]] =
@@ -223,19 +222,19 @@ object Kniffle extends App {
       playerState: PlayerState
   ): Option[PlayerState] = {
     val outcomeNames = Map(
-      "ones"      -> Ones,
-      "twos"      -> Twos,
-      "threes"    -> Threes,
-      "fours"     -> Fours,
-      "fives"     -> Fives,
-      "sixes"     -> Sixes,
-      "3ofKind"   -> ThreeOfKind,
-      "4ofKind"   -> FourOfKind,
-      "fullHouse" -> FullHouse,
-      "kniffle"   -> FiveOfKind,
-      "4straight" -> FourStraight,
-      "5straight" -> FiveStraight,
-      "chance"    -> Chance
+      "Ones"        -> Ones,
+      "Twos"        -> Twos,
+      "Threes"      -> Threes,
+      "Fours"       -> Fours,
+      "Fives"       -> Fives,
+      "Sixes"       -> Sixes,
+      "ThreeOfKind" -> ThreeOfKind,
+      "FourOfKind"  -> FourOfKind,
+      "fullHouse"   -> FullHouse,
+      "kniffle"     -> Kniffle,
+      "4straight"   -> FourStraight,
+      "5straight"   -> FiveStraight,
+      "chance"      -> Chance
     )
 
     for {
@@ -308,16 +307,14 @@ object Kniffle extends App {
       finalState <- if (finished) ZIO.succeed(newState) else gameLoop(newState)
     } yield (finalState)
 
-  def nextInt(max: Int): ZIO[Random, Nothing, Int] =
-    random.nextInt(max)
-
   private val rollNDice: Int => ZIO[Random, Nothing, List[Die]] =
     n => ZIO.traverse(List.fill(n)("foo"))(_ => rollDie)
 
   val roll5Dice = rollNDice(5).map(l => FiveDice(l(0), l(1), l(2), l(3), l(4)))
 
   private def rollDie: ZIO[Random, Nothing, Die] =
-    nextInt(5)
+    random
+      .nextInt(6)
       .map(_ + 1)
       .map(_ match {
         case 1 => One
@@ -327,6 +324,8 @@ object Kniffle extends App {
         case 5 => Five
         case 6 => Six
       })
+
+  def assignmentScore(a: Assignment): Int = a.outcome.score(a.roll)
 
   private def renderState(state: State): ZIO[Console, IOException, Unit] = {
     val dashes = "-" * 10
@@ -338,15 +337,17 @@ object Kniffle extends App {
         _ <- ZIO.traverse(playerState.filledHands)(
           fh =>
             for {
-              _ <- putStrLn(s"Hand: ${fh.outcome}   |   Score: ${fh.outcome.score(fh.roll)} ")
+              _ <- putStrLn(s"Hand: ${fh.outcome}          |   Score: ${assignmentScore(fh)} ")
             } yield ()
         )
+        _ <- putStrLn(s"totalScore: ${playerState.filledHands.map(assignmentScore).sum}")
 
       } yield ()
 
     for {
+      _ <- putStrLn("*" * 10)
       _ <- ZIO.traverse(state.players)(
-        player => putStrLn("") *> putStrLn(dashes) *> renderPlayerState(player)
+        player => putStrLn("") *> renderPlayerState(player) *> putStrLn(dashes)
       )
     } yield ()
 
