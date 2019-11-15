@@ -1,6 +1,5 @@
 package games
 
-import java.lang.NumberFormatException
 import java.io.IOException
 
 import zio._
@@ -348,7 +347,7 @@ object Kniffel extends App {
                 } yield ()
             )
         topHalfSum = playerState.filledHands.filter(ass => isTopHalf(ass.outcome)).map(assignmentScore).sum
-        bonus      = if (topHalfSum > 62) 50 else 0
+        bonus      = if (topHalfSum >= 63) 50 else 0
         _          <- putStrLn(s"bonus: $bonus")
         _          <- putStrLn(s"totalScore: ${playerState.filledHands.map(assignmentScore).sum + bonus}")
       } yield ()
