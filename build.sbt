@@ -6,9 +6,9 @@ lazy val root = (project in file(".")).settings(
   inThisBuild(
     List(
       organization := "alandevlin",
-      scalaVersion := "2.12.8",
+      scalaVersion := "2.12.10",
       scalacOptions ++= Seq(
-      "-Xfatal-warnings",  // New lines for each options
+      "-Xfatal-warnings",
   "-deprecation",
   "-unchecked")
     )),

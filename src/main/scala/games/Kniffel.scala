@@ -14,16 +14,16 @@ import scala.language.higherKinds
 import scala.util.Try
 
 /**
-  * Kniffle game
-  * 1. choose number of players
-  * 2. roll dice
-  * 3. choose dice to keep
-  * 4. either assign to available hand or re-roll
-  * 5. if chose to re-roll repeat step 2-4
-  * 6. if chose to re-roll repoeat step 2 and then assign hand
-  * 7. next player turn until both players have filled all hands
+ * Kniffel game
+ * 1. choose number of players
+ * 2. roll dice
+ * 3. choose dice to keep
+ * 4. either assign to available hand or re-roll
+ * 5. if chose to re-roll repeat step 2-4
+ * 6. if chose to re-roll repoeat step 2 and then assign hand
+ * 7. next player turn until both players have filled all hands
  **/
-object Kniffle extends App {
+object Kniffel extends App {
 
   sealed trait Die { val value: Int; override def toString() = this.value.toString }
   case object One   extends Die { val value: Int = 1 }
@@ -88,6 +88,16 @@ object Kniffle extends App {
     fiveDice.value.map(_.value).sorted.sliding(n).exists(allSequential)
   }
 
+  def isTopHalf(o: Outcome): Boolean = o match {
+    case Ones   => true
+    case Twos   => true
+    case Threes => true
+    case Fours  => true
+    case Fives  => true
+    case Sixes  => true
+    case _      => false
+  }
+
   def straightScore(n: Int, s: Int): FiveDice => Int =
     scoreIfPredicate(containsNOfStraight(n), _ => s)
 
@@ -103,7 +113,7 @@ object Kniffle extends App {
   case object ThreeOfKind  extends Outcome(ofKindScore(3), 6)
   case object FourOfKind   extends Outcome(ofKindScore(4), 7)
   case object FullHouse    extends Outcome(fullHouseScore, 8)
-  case object Kniffle      extends Outcome(kniffleScore, 9)
+  case object Kniffel      extends Outcome(kniffleScore, 9)
   case object FourStraight extends Outcome(straightScore(4, 25), 10)
   case object FiveStraight extends Outcome(straightScore(5, 40), 11)
   case object Chance       extends Outcome(sumMatchingDice(_ => true), 12)
@@ -122,7 +132,7 @@ object Kniffle extends App {
     ThreeOfKind,
     FourOfKind,
     FullHouse,
-    Kniffle,
+    Kniffel,
     FourStraight,
     FiveStraight,
     Chance
@@ -164,7 +174,6 @@ object Kniffle extends App {
       case true  => Some(roll.tail)
     }
 
-  //TODO needs to return an Option[FiveDice]
   def parseRetainString(retain: String): Reader[FiveDice, Option[List[Die]]] = Reader { roll =>
     if (retain.isEmpty()) Some(Nil)
     else {
@@ -205,14 +214,14 @@ object Kniffle extends App {
       _            <- putStrLn("please assign your roll to a hand")
       assignString <- putStrLn(s"${currentPlayer.unfilledHands.toString()}") *> getStrLn
       maybeState <- parseAssignString(assignString, roll, state) match {
-        case None =>
-          putStrLn("miscellanious error assigning roll") *> getAssignment(
-            roll,
-            currentPlayer,
-            state
-          )
-        case Some(state) => ZIO.succeed(state)
-      }
+                     case None =>
+                       putStrLn("miscellanious error assigning roll") *> getAssignment(
+                         roll,
+                         currentPlayer,
+                         state
+                       )
+                     case Some(state) => ZIO.succeed(state)
+                   }
 
     } yield (maybeState)
 
@@ -222,19 +231,19 @@ object Kniffle extends App {
       playerState: PlayerState
   ): Option[PlayerState] = {
     val outcomeNames = Map(
-      "Ones"        -> Ones,
-      "Twos"        -> Twos,
-      "Threes"      -> Threes,
-      "Fours"       -> Fours,
-      "Fives"       -> Fives,
-      "Sixes"       -> Sixes,
-      "ThreeOfKind" -> ThreeOfKind,
-      "FourOfKind"  -> FourOfKind,
-      "fullHouse"   -> FullHouse,
-      "kniffle"     -> Kniffle,
-      "4straight"   -> FourStraight,
-      "5straight"   -> FiveStraight,
-      "chance"      -> Chance
+      "Ones"         -> Ones,
+      "Twos"         -> Twos,
+      "Threes"       -> Threes,
+      "Fours"        -> Fours,
+      "Fives"        -> Fives,
+      "Sixes"        -> Sixes,
+      "ThreeOfKind"  -> ThreeOfKind,
+      "FourOfKind"   -> FourOfKind,
+      "FullHouse"    -> FullHouse,
+      "Kniffel"      -> Kniffel,
+      "FourStraight" -> FourStraight,
+      "FiveStraight" -> FiveStraight,
+      "Chance"       -> Chance
     )
 
     for {
@@ -247,8 +256,6 @@ object Kniffle extends App {
 
   }
 
-  //TODO take intersection with old dice
-
   private def getRetained(
       roll: FiveDice,
       turnsTaken: Int,
@@ -258,20 +265,19 @@ object Kniffle extends App {
     else {
       for {
         retainStr <- putStrLn(s"your roll is $roll") *>
-          putStrLn(s"which dice would you like to keep? ") *>
-          getStrLn
+                      putStrLn(s"which dice would you like to keep? ") *>
+                      getStrLn
         nextRoll <- parseRetainString(retainStr).run(roll) match {
-          case None =>
-            putStrLn("miscellanious error try again with retaining dice") *>
-              getRetained(roll, turnsTaken, currentPlayer)
-          case Some(retainedList) =>
-            val newDice = rollNDice(5 - retainedList.length)
-            val diceSet = newDice map (_ ++ retainedList)
-            diceSet.flatMap(
-              d =>
-                getRetained(FiveDice(d(0), d(1), d(2), d(3), d(4)), turnsTaken + 1, currentPlayer)
-            )
-        }
+                     case None =>
+                       putStrLn("miscellanious error try again with retaining dice") *>
+                         getRetained(roll, turnsTaken, currentPlayer)
+                     case Some(retainedList) =>
+                       val newDice = rollNDice(5 - retainedList.length)
+                       val diceSet = newDice map (_ ++ retainedList)
+                       diceSet.flatMap(
+                         d => getRetained(FiveDice(d(0), d(1), d(2), d(3), d(4)), turnsTaken + 1, currentPlayer)
+                       )
+                   }
       } yield (nextRoll)
     }
   }
@@ -282,29 +288,26 @@ object Kniffle extends App {
   ): ZIO[Console with Random, IOException, PlayerState] =
     for {
       _        <- putStrLn(s"current player is ${currentPlayer.name}")
-      _        <- putStrLn(s"     fillled Hands: ${currentPlayer.filledHands.sorted}")
       _        <- putStrLn(s"     unfillled Hands: ${currentPlayer.unfilledHands.sorted}")
       roll     <- roll5Dice
       retained <- getRetained(roll, 0, currentPlayer) //TODO this is actually the full roll, not just retained
       _        <- putStrLn(s"your roll is $retained")
       state <- getAssignment(
-        retained,
-        currentPlayer,
-        state.players.find(_.name == currentPlayer.name).get
-      )
+                retained,
+                currentPlayer,
+                state.players.find(_.name == currentPlayer.name).get
+              )
 
     } yield (state)
 
   private def gameLoop(state: State): ZIO[Console with Random, IOException, State] =
     for {
-      _ <- renderState(state)
-      currentPlayer = state.players.head
+      _              <- renderState(state)
+      currentPlayer  = state.players.head
       newPlayerState <- rollLoop(currentPlayer, state)
-      newState = advancePlayer(updateState(newPlayerState, state))
-      _ <- putStrLn(s"exited roll loop - newState $newState")
-      //TODO update state
-      finished = newState.players.flatMap(_.unfilledHands).isEmpty
-      finalState <- if (finished) ZIO.succeed(newState) else gameLoop(newState)
+      newState       = advancePlayer(updateState(newPlayerState, state))
+      finished       = newState.players.flatMap(_.unfilledHands).isEmpty
+      finalState     <- if (finished) ZIO.succeed(newState) else gameLoop(newState)
     } yield (finalState)
 
   private val rollNDice: Int => ZIO[Random, Nothing, List[Die]] =
@@ -312,9 +315,10 @@ object Kniffle extends App {
 
   val roll5Dice = rollNDice(5).map(l => FiveDice(l(0), l(1), l(2), l(3), l(4)))
 
+  private def newRandomInt(i: Int) = random.nextInt(i)
+
   private def rollDie: ZIO[Random, Nothing, Die] =
-    random
-      .nextInt(6)
+    newRandomInt(6)
       .map(_ + 1)
       .map(_ match {
         case 1 => One
@@ -328,42 +332,47 @@ object Kniffle extends App {
   def assignmentScore(a: Assignment): Int = a.outcome.score(a.roll)
 
   private def renderState(state: State): ZIO[Console, IOException, Unit] = {
-    val dashes = "-" * 10
+    val topHalfBonus = "top half bonus:"
+    val dashes       = "-" * 10
     def renderPlayerState(playerState: PlayerState): ZIO[Console, IOException, Unit] =
       for {
         _ <- putStrLn(playerState.name)
         _ <- putStrLn("")
         _ <- putStrLn("filled hands")
-        _ <- ZIO.traverse(playerState.filledHands)(
-          fh =>
-            for {
-              _ <- putStrLn(s"Hand: ${fh.outcome}          |   Score: ${assignmentScore(fh)} ")
-            } yield ()
-        )
-        _ <- putStrLn(s"totalScore: ${playerState.filledHands.map(assignmentScore).sum}")
-
+        _ <- ZIO.traverse(playerState.filledHands.sorted)(
+              fh =>
+                for {
+                  _ <- putStrLn(
+                        s"Hand: ${fh.outcome} ${" " * (15 - fh.outcome.toString.length)}|   Score: ${assignmentScore(fh)} "
+                      )
+                } yield ()
+            )
+        topHalfSum = playerState.filledHands.filter(ass => isTopHalf(ass.outcome)).map(assignmentScore).sum
+        bonus      = if (topHalfSum > 62) 50 else 0
+        _          <- putStrLn(s"bonus: $bonus")
+        _          <- putStrLn(s"totalScore: ${playerState.filledHands.map(assignmentScore).sum + bonus}")
       } yield ()
 
     for {
       _ <- putStrLn("*" * 10)
       _ <- ZIO.traverse(state.players)(
-        player => putStrLn("") *> renderPlayerState(player) *> putStrLn(dashes)
-      )
+            player => putStrLn("") *> renderPlayerState(player) *> putStrLn(dashes)
+          )
     } yield ()
 
   }
 
   private val getNumberPlayers: ZIO[Console, IOException, Int] =
     for {
-      ans <- putStrLn("How many players?") *> getStrLn
+      ans    <- putStrLn("How many players?") *> getStrLn
       answer = Try(ans.toInt)
       numPlayers <- answer match {
-        case scala.util.Success(ans) =>
-          if (ans > 0 && ans <= 10) ZIO.succeed(ans)
-          else putStrLn("number must be between 1 and 10") *> getNumberPlayers
-        case scala.util.Failure(_) =>
-          putStrLn("must enter a valid integer between 1 and 10") *> getNumberPlayers
-      }
+                     case scala.util.Success(ans) =>
+                       if (ans > 0 && ans <= 10) ZIO.succeed(ans)
+                       else putStrLn("number must be between 1 and 10") *> getNumberPlayers
+                     case scala.util.Failure(_) =>
+                       putStrLn("must enter a valid integer between 1 and 10") *> getNumberPlayers
+                   }
     } yield (numPlayers)
 
   private def getName(n: Int): ZIO[Console, IOException, String] =
@@ -374,13 +383,13 @@ object Kniffle extends App {
 
   val kniffleGame: ZIO[Console with Random, IOException, Unit] =
     for {
-      _               <- putStrLn("Functional Kniffle")
+      _               <- putStrLn("Functional Kniffel")
       numberOfPlayers <- getNumberPlayers
       _               <- putStrLn(s"numberOfPlayers $numberOfPlayers")
       playerNames     <- getPlayerNames(numberOfPlayers)
-      state = State(playerNames.map(name => PlayerState.empty(name)))
-      finalState <- gameLoop(state)
-      _          <- renderState(finalState)
+      state           = State(playerNames.map(name => PlayerState.empty(name)))
+      finalState      <- gameLoop(state)
+      _               <- renderState(finalState)
     } yield ()
 
   override def run(args: List[String]) =
