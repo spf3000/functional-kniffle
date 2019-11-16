@@ -84,7 +84,7 @@ object Kniffel extends App {
     def allSequential(ints: List[Int]): Boolean =
       ints.sorted.zip(ints.tail).forall(p => p._2 - p._1 == 1)
 
-    fiveDice.value.map(_.value).sorted.sliding(n).exists(allSequential)
+    fiveDice.value.map(_.value).distinct.sorted.sliding(n).exists(allSequential)
   }
 
   def isTopHalf(o: Outcome): Boolean = o match {
