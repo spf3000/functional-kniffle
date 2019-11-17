@@ -11,6 +11,8 @@ import Scalaz._
 
 import scala.language.higherKinds
 import scala.util.Try
+import State._
+import Score._
 
 /**
  * Kniffel game
@@ -22,133 +24,7 @@ import scala.util.Try
  * 6. if chose to re-roll repoeat step 2 and then assign hand
  * 7. next player turn until both players have filled all hands
  **/
-object Kniffel extends App {
-
-  sealed trait Die { val value: Int; override def toString() = this.value.toString }
-  case object One   extends Die { val value: Int = 1 }
-  case object Two   extends Die { val value: Int = 2 }
-  case object Three extends Die { val value: Int = 3 }
-  case object Four  extends Die { val value: Int = 4 }
-  case object Five  extends Die { val value: Int = 5 }
-  case object Six   extends Die { val value: Int = 6 }
-
-  trait FiveDice {
-    val value: List[Die]
-    override def toString(): String = value.toString
-  }
-  object FiveDice {
-    def apply(d1: Die, d2: Die, d3: Die, d4: Die, d5: Die) = new FiveDice {
-      val value = List(d1, d2, d3, d4, d5)
-    }
-  }
-
-  def sumMatchingDice(f: Die => Boolean): FiveDice => Int = _.value.filter(f(_)).map(_.value).sum
-
-  def sumDieMatches(d: Die): FiveDice => Int = sumMatchingDice(_ == d)
-
-  val groupedDiceLengths: FiveDice => List[Int] =
-    _.value
-      .groupBy(identity)
-      .values
-      .map(_.length)
-      .toList
-
-  def containsGreaterThanN(i: Int): List[Int] => Boolean = _.exists(_ >= i)
-
-  def containsNOfKind(n: Int): FiveDice => Boolean =
-    groupedDiceLengths andThen containsGreaterThanN(n)
-
-  def containsMandNOfKind(m: Int, n: Int): FiveDice => Boolean = fd => {
-    val greater           = m.max(n)
-    val lesser            = m.min(n)
-    val groupedDice       = groupedDiceLengths(fd)
-    val sortedGroupedDice = groupedDice.sorted
-    val gdMax             = sortedGroupedDice.last
-    val gdSecondMax       = sortedGroupedDice.init.last
-    gdMax >= greater && gdSecondMax >= lesser
-  }
-
-  def sumIfPredicate(cond: FiveDice => Boolean): FiveDice => Int =
-    roll => if (cond(roll)) sumMatchingDice(_ => true)(roll) else 0
-
-  def scoreIfPredicate(cond: FiveDice => Boolean, scoreFunc: FiveDice => Int): FiveDice => Int =
-    roll => if (cond(roll)) scoreFunc(roll) else 0
-
-  def ofKindScore(n: Int): FiveDice => Int = sumIfPredicate(containsNOfKind(n))
-
-  def fullHouseScore = scoreIfPredicate(containsMandNOfKind(3, 2), _ => 30)
-
-  def kniffleScore = scoreIfPredicate(containsNOfKind(5), _ => 50)
-
-  def containsNOfStraight(n: Int): FiveDice => Boolean = { fiveDice =>
-    def allSequential(ints: List[Int]): Boolean =
-      ints.sorted.zip(ints.tail).forall(p => p._2 - p._1 == 1)
-
-    fiveDice.value.map(_.value).sorted.sliding(n).exists(allSequential)
-  }
-
-  def isTopHalf(o: Outcome): Boolean = o match {
-    case Ones   => true
-    case Twos   => true
-    case Threes => true
-    case Fours  => true
-    case Fives  => true
-    case Sixes  => true
-    case _      => false
-  }
-
-  def straightScore(n: Int, s: Int): FiveDice => Int =
-    scoreIfPredicate(containsNOfStraight(n), _ => s)
-
-  abstract class Outcome(val score: FiveDice => Int, val order: Int) extends Ordered[Outcome] {
-    def compare(that: Outcome) = this.order.compare(that.order)
-  }
-  case object Ones         extends Outcome(sumDieMatches(One), 0)
-  case object Twos         extends Outcome(sumDieMatches(Two), 1)
-  case object Threes       extends Outcome(sumDieMatches(Three), 2)
-  case object Fours        extends Outcome(sumDieMatches(Four), 3)
-  case object Fives        extends Outcome(sumDieMatches(Five), 4)
-  case object Sixes        extends Outcome(sumDieMatches(Six), 5)
-  case object ThreeOfKind  extends Outcome(ofKindScore(3), 6)
-  case object FourOfKind   extends Outcome(ofKindScore(4), 7)
-  case object FullHouse    extends Outcome(fullHouseScore, 8)
-  case object Kniffel      extends Outcome(kniffleScore, 9)
-  case object FourStraight extends Outcome(straightScore(4, 25), 10)
-  case object FiveStraight extends Outcome(straightScore(5, 40), 11)
-  case object Chance       extends Outcome(sumMatchingDice(_ => true), 12)
-
-  case class Assignment(outcome: Outcome, roll: FiveDice) extends Ordered[Assignment] {
-    def compare(that: Assignment) = this.outcome.compare(that.outcome)
-  }
-
-  val emptyHand = List(
-    Ones,
-    Twos,
-    Threes,
-    Fours,
-    Fives,
-    Sixes,
-    ThreeOfKind,
-    FourOfKind,
-    FullHouse,
-    Kniffel,
-    FourStraight,
-    FiveStraight,
-    Chance
-  )
-
-  case class PlayerState(name: String, unfilledHands: List[Outcome], filledHands: List[Assignment])
-  object PlayerState {
-    def empty(name: String): PlayerState = new PlayerState(name, emptyHand, List())
-  }
-
-  case class State(players: List[PlayerState])
-
-  def advancePlayer(state: State): State =
-    State(state.players.tail :+ state.players.head)
-
-  def updateState(playerState: PlayerState, state: State): State =
-    State(playerState +: state.players.filterNot(_.name == playerState.name))
+object KniffelGame extends App {
 
   def toDie(s: String): Option[Die] = s match {
     case "1" => Some(One)
@@ -159,19 +35,6 @@ object Kniffel extends App {
     case "6" => Some(Six)
     case _   => None
   }
-
-  def getDie(r: String, roll: List[Die]): Option[List[Die]] =
-    for {
-      d <- toDie(r)
-      c <- rollContains(d, roll)
-    } yield (c)
-
-  def rollContains(die: Die, roll: List[Die]): Option[List[Die]] =
-    roll
-      .contains(die) match {
-      case false => None
-      case true  => Some(roll.tail)
-    }
 
   def parseRetainString(retain: String): Reader[FiveDice, Option[List[Die]]] = Reader { roll =>
     if (retain.isEmpty()) Some(Nil)
@@ -328,8 +191,6 @@ object Kniffel extends App {
         case 6 => Six
       })
 
-  def assignmentScore(a: Assignment): Int = a.outcome.score(a.roll)
-
   private def renderState(state: State): ZIO[Console, IOException, Unit] = {
     val topHalfBonus = "top half bonus:"
     val dashes       = "-" * 10
@@ -346,10 +207,10 @@ object Kniffel extends App {
                       )
                 } yield ()
             )
-        topHalfSum = playerState.filledHands.filter(ass => isTopHalf(ass.outcome)).map(assignmentScore).sum
+        topHalfSum = playerState.filledHands.filter(a => isTopHalf(a.outcome)).map(assignmentScore _).sum
         bonus      = if (topHalfSum >= 63) 50 else 0
         _          <- putStrLn(s"bonus: $bonus")
-        _          <- putStrLn(s"totalScore: ${playerState.filledHands.map(assignmentScore).sum + bonus}")
+        _          <- putStrLn(s"totalScore: ${playerState.filledHands.map(assignmentScore _).sum + bonus}")
       } yield ()
 
     for {
@@ -380,7 +241,7 @@ object Kniffel extends App {
   private def getPlayerNames(numberOfPlayers: Int): ZIO[Console, IOException, List[String]] =
     ZIO.traverse((1 to numberOfPlayers).toList)(getName(_))
 
-  val kniffleGame: ZIO[Console with Random, IOException, Unit] =
+  val kniffelGame: ZIO[Console with Random, IOException, Unit] =
     for {
       _               <- putStrLn("Functional Kniffel")
       numberOfPlayers <- getNumberPlayers
@@ -392,6 +253,6 @@ object Kniffel extends App {
     } yield ()
 
   override def run(args: List[String]) =
-    kniffleGame.fold(_ => 1, _ => 0)
+    kniffelGame.fold(_ => 1, _ => 0)
 
 }
