@@ -14,7 +14,7 @@ object Score{
       .map(_.length)
       .toList
 
-  def containsGreaterThanN(i: Int): List[Int] => Boolean = _.exists(_ >= i)
+  def containsGreaterThanN(n: Int): List[Int] => Boolean = _.exists(_ >= n)
 
   def containsNOfKind(n: Int): FiveDice => Boolean =
     groupedDiceLengths andThen containsGreaterThanN(n)

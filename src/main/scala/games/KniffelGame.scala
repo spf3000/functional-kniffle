@@ -41,12 +41,12 @@ object KniffelGame extends App {
     else {
       val rollList: List[Die] = roll.value
 
-      val retainedDice: String => Option[List[Die]] =
+      val parseString: String => Option[List[Die]] =
         _.split(",").toList
           .map(toDie)
           .sequence
 
-      val isValidRetainment: List[Die] => Option[List[Die]] =
+      val rollContainsRetained: List[Die] => Option[List[Die]] =
         retain => {
           val dieCounts: List[Die] => Map[Die, Int] = _.groupBy(identity).mapValues(_.length)
           val retVals                               = dieCounts(retain)
@@ -57,35 +57,12 @@ object KniffelGame extends App {
             .option(retain)
         }
 
-      val validNumberRetainments: List[Die] => Option[List[Die]] =
-        l => if (l.length <= 5) Some(l) else None
-
       val getRetained: String => Option[List[Die]] =
-        Kleisli(retainedDice) >=> Kleisli(isValidRetainment) >=> Kleisli(validNumberRetainments)
+        Kleisli(rollContainsRetained) <=< Kleisli(parseString)
 
       getRetained(retain)
     }
   }
-
-  private def getAssignment(
-      roll: FiveDice,
-      currentPlayer: PlayerState,
-      state: PlayerState
-  ): ZIO[Console, IOException, PlayerState] =
-    for {
-      _            <- putStrLn("please assign your roll to a hand")
-      assignString <- putStrLn(s"${currentPlayer.unfilledHands.toString()}") *> getStrLn
-      maybeState <- parseAssignString(assignString, roll, state) match {
-                     case None =>
-                       putStrLn("miscellanious error assigning roll") *> getAssignment(
-                         roll,
-                         currentPlayer,
-                         state
-                       )
-                     case Some(state) => ZIO.succeed(state)
-                   }
-
-    } yield (maybeState)
 
   def parseAssignString(
       assign: String,
@@ -117,60 +94,6 @@ object KniffelGame extends App {
     ))
 
   }
-
-  private def getRetained(
-      roll: FiveDice,
-      turnsTaken: Int,
-      currentPlayer: PlayerState
-  ): ZIO[Console with Random, IOException, FiveDice] = {
-    if (turnsTaken >= 2) ZIO.succeed(roll)
-    else {
-      for {
-        retainStr <- putStrLn(s"your roll is $roll") *>
-                      putStrLn(s"which dice would you like to keep? ") *>
-                      getStrLn
-        nextRoll <- parseRetainString(retainStr).run(roll) match {
-                     case None =>
-                       putStrLn("miscellanious error try again with retaining dice") *>
-                         getRetained(roll, turnsTaken, currentPlayer)
-                     case Some(retainedList) =>
-                       val newDice = rollNDice(5 - retainedList.length)
-                       val diceSet = newDice map (_ ++ retainedList)
-                       diceSet.flatMap(
-                         d => getRetained(FiveDice(d(0), d(1), d(2), d(3), d(4)), turnsTaken + 1, currentPlayer)
-                       )
-                   }
-      } yield (nextRoll)
-    }
-  }
-
-  private def rollLoop(
-      currentPlayer: PlayerState,
-      state: State
-  ): ZIO[Console with Random, IOException, PlayerState] =
-    for {
-      _        <- putStrLn(s"current player is ${currentPlayer.name}")
-      _        <- putStrLn(s"     unfillled Hands: ${currentPlayer.unfilledHands.sorted}")
-      roll     <- roll5Dice
-      retained <- getRetained(roll, 0, currentPlayer) //TODO this is actually the full roll, not just retained
-      _        <- putStrLn(s"your roll is $retained")
-      state <- getAssignment(
-                retained,
-                currentPlayer,
-                state.players.find(_.name == currentPlayer.name).get
-              )
-
-    } yield (state)
-
-  private def gameLoop(state: State): ZIO[Console with Random, IOException, State] =
-    for {
-      _              <- renderState(state)
-      currentPlayer  = state.players.head
-      newPlayerState <- rollLoop(currentPlayer, state)
-      newState       = advancePlayer(updateState(newPlayerState, state))
-      finished       = newState.players.flatMap(_.unfilledHands).isEmpty
-      finalState     <- if (finished) ZIO.succeed(newState) else gameLoop(newState)
-    } yield (finalState)
 
   private val rollNDice: Int => ZIO[Random, Nothing, List[Die]] =
     n => ZIO.traverse(List.fill(n)("foo"))(_ => rollDie)
@@ -240,6 +163,80 @@ object KniffelGame extends App {
 
   private def getPlayerNames(numberOfPlayers: Int): ZIO[Console, IOException, List[String]] =
     ZIO.traverse((1 to numberOfPlayers).toList)(getName(_))
+
+  private def getAssignment(
+      roll: FiveDice,
+      currentPlayer: PlayerState,
+      state: PlayerState
+  ): ZIO[Console, IOException, PlayerState] =
+    for {
+      _            <- putStrLn("please assign your roll to a hand")
+      assignString <- putStrLn(s"${currentPlayer.unfilledHands.toString()}") *> getStrLn
+      maybeState <- parseAssignString(assignString, roll, state) match {
+                     case None =>
+                       putStrLn("miscellanious error assigning roll") *> getAssignment(
+                         roll,
+                         currentPlayer,
+                         state
+                       )
+                     case Some(state) => ZIO.succeed(state)
+                   }
+
+    } yield (maybeState)
+
+  private def getRetained(
+      roll: FiveDice,
+      turnsTaken: Int,
+      currentPlayer: PlayerState
+  ): ZIO[Console with Random, IOException, FiveDice] = {
+    if (turnsTaken >= 2) ZIO.succeed(roll)
+    else {
+      for {
+        retainStr <- putStrLn(s"your roll is $roll") *>
+                      putStrLn(s"which dice would you like to keep? ") *>
+                      getStrLn
+        nextRoll <- parseRetainString(retainStr).run(roll) match {
+                     case None =>
+                       putStrLn("miscellanious error try again with retaining dice") *>
+                         getRetained(roll, turnsTaken, currentPlayer)
+                     case Some(retainedList) =>
+                       val newDice = rollNDice(5 - retainedList.length)
+                       val diceSet = newDice map (_ ++ retainedList)
+                       diceSet.flatMap(
+                         d => getRetained(FiveDice(d(0), d(1), d(2), d(3), d(4)), turnsTaken + 1, currentPlayer)
+                       )
+                   }
+      } yield (nextRoll)
+    }
+  }
+
+  private def rollLoop(
+      currentPlayer: PlayerState,
+      state: State
+  ): ZIO[Console with Random, IOException, PlayerState] =
+    for {
+      _        <- putStrLn(s"current player is ${currentPlayer.name}")
+      _        <- putStrLn(s"     unfillled Hands: ${currentPlayer.unfilledHands.sorted}")
+      roll     <- roll5Dice
+      retained <- getRetained(roll, 0, currentPlayer) //TODO this is actually the full roll, not just retained
+      _        <- putStrLn(s"your roll is $retained")
+      state <- getAssignment(
+                retained,
+                currentPlayer,
+                state.players.find(_.name == currentPlayer.name).get
+              )
+
+    } yield (state)
+
+  private def gameLoop(state: State): ZIO[Console with Random, IOException, State] =
+    for {
+      _              <- renderState(state)
+      currentPlayer  = state.players.head
+      newPlayerState <- rollLoop(currentPlayer, state)
+      newState       = advancePlayer(updateState(newPlayerState, state))
+      finished       = newState.players.flatMap(_.unfilledHands).isEmpty
+      finalState     <- if (finished) ZIO.succeed(newState) else gameLoop(newState)
+    } yield (finalState)
 
   val kniffelGame: ZIO[Console with Random, IOException, Unit] =
     for {

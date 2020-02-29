@@ -1,8 +1,7 @@
 package games
 
-
-  case class PlayerState(name: String, unfilledHands: List[Outcome], filledHands: List[Assignment])
-  object PlayerState {
+case class PlayerState(name: String, unfilledHands: List[Outcome], filledHands: List[Assignment])
+object PlayerState {
 
   val emptyHand = List(
     Ones,
@@ -19,8 +18,5 @@ package games
     FiveStraight,
     Chance
   )
-
-
-    def empty(name: String): PlayerState = new PlayerState(name, emptyHand, List())
-  }
-
+  def empty(name: String): PlayerState = new PlayerState(name, emptyHand, List())
+}
