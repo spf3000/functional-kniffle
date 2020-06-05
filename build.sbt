@@ -14,5 +14,5 @@ lazy val root = (project in file(".")).settings(
     )),
   name := "kniffle",
   libraryDependencies += "dev.zio"  %% "zio" % "1.0.0-RC19",
-  libraryDependencies += "org.scalaz"  %% "scalaz-core" % "7.3.0"
+  libraryDependencies += "org.scalaz"  %% "scalaz-core" % "7.3.1"
 )
