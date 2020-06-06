@@ -26,7 +26,31 @@ import Score._
  **/
 object KniffelGame extends App {
 
-  def toDie(s: String): Option[Die] = s match {
+  val kniffelGame: ZIO[Console with Random, IOException, Unit] =
+    for {
+      _               <- putStrLn("Functional Kniffel")
+      numberOfPlayers <- getNumberPlayers
+      _               <- putStrLn(s"numberOfPlayers $numberOfPlayers")
+      playerNames     <- getPlayerNames(numberOfPlayers)
+      state           = State(playerNames.map(name => PlayerState.empty(name)))
+      finalState      <- gameLoop(state)
+      _               <- renderState(finalState)
+    } yield ()
+
+  override def run(args: List[String]) =
+    kniffelGame.fold(_ => 1, _ => 0)
+
+  private def gameLoop(state: State): ZIO[Console with Random, IOException, State] =
+    for {
+      _              <- renderState(state)
+      currentPlayer  = state.players.head
+      newPlayerState <- rollLoop(currentPlayer, state)
+      newState       = advancePlayer(updateState(newPlayerState, state))
+      finished       = newState.players.flatMap(_.unfilledHands).isEmpty
+      finalState     <- if (finished) ZIO.succeed(newState) else gameLoop(newState)
+    } yield (finalState)
+
+  private def toDie(s: String): Option[Die] = s match {
     case "1" => Some(One)
     case "2" => Some(Two)
     case "3" => Some(Three)
@@ -36,7 +60,7 @@ object KniffelGame extends App {
     case _   => None
   }
 
-  def parseRetainString(retain: String): Reader[FiveDice, Option[List[Die]]] = Reader { roll =>
+  private def parseRetainString(retain: String): Reader[FiveDice, Option[List[Die]]] = Reader { roll =>
     if (retain.isEmpty()) Some(Nil)
     else {
       val rollList: List[Die] = roll.value
@@ -64,7 +88,7 @@ object KniffelGame extends App {
     }
   }
 
-  def parseAssignString(
+  private def parseAssignString(
       assign: String,
       roll: FiveDice,
       playerState: PlayerState
@@ -98,7 +122,7 @@ object KniffelGame extends App {
   private val rollNDice: Int => ZIO[Random, Nothing, List[Die]] =
     n => ZIO.traverse(List.fill(n)("foo"))(_ => rollDie)
 
-  val roll5Dice = rollNDice(5).map(l => FiveDice(l(0), l(1), l(2), l(3), l(4)))
+  private val roll5Dice = rollNDice(5).map(l => FiveDice(l(0), l(1), l(2), l(3), l(4)))
 
   private def newRandomInt(i: Int) = random.nextInt(i)
 
@@ -122,13 +146,12 @@ object KniffelGame extends App {
         _ <- putStrLn(playerState.name)
         _ <- putStrLn("")
         _ <- putStrLn("filled hands")
-        _ <- ZIO.traverse(playerState.filledHands.sorted)(
-              fh =>
-                for {
-                  _ <- putStrLn(
-                        s"Hand: ${fh.outcome} ${" " * (15 - fh.outcome.toString.length)}|   Score: ${assignmentScore(fh)} "
-                      )
-                } yield ()
+        _ <- ZIO.traverse(playerState.filledHands.sorted)(fh =>
+              for {
+                _ <- putStrLn(
+                      s"Hand: ${fh.outcome} ${" " * (15 - fh.outcome.toString.length)}|   Score: ${assignmentScore(fh)} "
+                    )
+              } yield ()
             )
         topHalfSum = playerState.filledHands.filter(a => isTopHalf(a.outcome)).map(assignmentScore _).sum
         bonus      = if (topHalfSum >= 63) 50 else 0
@@ -138,9 +161,7 @@ object KniffelGame extends App {
 
     for {
       _ <- putStrLn("*" * 10)
-      _ <- ZIO.traverse(state.players)(
-            player => putStrLn("") *> renderPlayerState(player) *> putStrLn(dashes)
-          )
+      _ <- ZIO.traverse(state.players)(player => putStrLn("") *> renderPlayerState(player) *> putStrLn(dashes))
     } yield ()
 
   }
@@ -202,8 +223,8 @@ object KniffelGame extends App {
                      case Some(retainedList) =>
                        val newDice = rollNDice(5 - retainedList.length)
                        val diceSet = newDice map (_ ++ retainedList)
-                       diceSet.flatMap(
-                         d => getRetained(FiveDice(d(0), d(1), d(2), d(3), d(4)), turnsTaken + 1, currentPlayer)
+                       diceSet.flatMap(d =>
+                         getRetained(FiveDice(d(0), d(1), d(2), d(3), d(4)), turnsTaken + 1, currentPlayer)
                        )
                    }
       } yield (nextRoll)
@@ -227,29 +248,5 @@ object KniffelGame extends App {
               )
 
     } yield (state)
-
-  private def gameLoop(state: State): ZIO[Console with Random, IOException, State] =
-    for {
-      _              <- renderState(state)
-      currentPlayer  = state.players.head
-      newPlayerState <- rollLoop(currentPlayer, state)
-      newState       = advancePlayer(updateState(newPlayerState, state))
-      finished       = newState.players.flatMap(_.unfilledHands).isEmpty
-      finalState     <- if (finished) ZIO.succeed(newState) else gameLoop(newState)
-    } yield (finalState)
-
-  val kniffelGame: ZIO[Console with Random, IOException, Unit] =
-    for {
-      _               <- putStrLn("Functional Kniffel")
-      numberOfPlayers <- getNumberPlayers
-      _               <- putStrLn(s"numberOfPlayers $numberOfPlayers")
-      playerNames     <- getPlayerNames(numberOfPlayers)
-      state           = State(playerNames.map(name => PlayerState.empty(name)))
-      finalState      <- gameLoop(state)
-      _               <- renderState(finalState)
-    } yield ()
-
-  override def run(args: List[String]) =
-    kniffelGame.fold(_ => 1, _ => 0)
 
 }

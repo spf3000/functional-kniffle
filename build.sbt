@@ -6,7 +6,7 @@ lazy val root = (project in file(".")).settings(
   inThisBuild(
     List(
       organization := "alandevlin",
-      scalaVersion := "2.12.10",
+      scalaVersion := "2.12.11",
       scalacOptions ++= Seq(
       "-Xfatal-warnings",
   "-deprecation",
@@ -14,5 +14,5 @@ lazy val root = (project in file(".")).settings(
     )),
   name := "kniffle",
   libraryDependencies += "dev.zio"  %% "zio" % "1.0.0-RC17",
-  libraryDependencies += "org.scalaz"  %% "scalaz-core" % "7.3.0-M31"
-)
+  libraryDependencies += "org.scalaz"  %% "scalaz-core" % "7.3.0-M31",
+).enablePlugins(JavaAppPackaging)
